@@ -15,9 +15,12 @@ class _State extends State<GroupsList> with SingleTickerProviderStateMixin {
   var afterOffset = 0.0;
   var scrollPosition = 0.0;
   var selectedItemOffset = 0.0;
+  var scrollOffset = 0.0;
   var tapped = false;
   var selectedItem = -1;
   var collapsed = false;
+  var a = false;
+  double get fullSelectedItemOffset => selectedItemOffset + scrollOffset;
 
   final scrollController = ScrollController();
   final items = List.generate(17, (index) => Item(Colors.primaries[index]));
@@ -37,12 +40,12 @@ class _State extends State<GroupsList> with SingleTickerProviderStateMixin {
 
     final sign = (selectedItem - i).sign;
     if (i - selectedItem < 0 &&
-        selectedItemOffset < (i - selectedItem) * headerSize + 30 * sign) {
+        fullSelectedItemOffset < (i - selectedItem) * headerSize + 30 * sign) {
       shift = 1 * sign;
     }
 
     if (i - selectedItem > 0 &&
-        selectedItemOffset > (i - selectedItem) * headerSize + 30 * sign) {
+        fullSelectedItemOffset > (i - selectedItem) * headerSize + 30 * sign) {
       shift = 1 * sign;
     }
 
@@ -92,25 +95,58 @@ class _State extends State<GroupsList> with SingleTickerProviderStateMixin {
   }
 
   void onDragEnd() {
-    var shift = selectedItemOffset ~/ headerSize;
-    var a = selectedItemOffset.abs() % headerSize > headerSize / 2 ? 1 : 0;
-    shift += (a * selectedItemOffset.toInt().sign);
+    var shift = fullSelectedItemOffset ~/ headerSize;
+    var additionalShift =
+        fullSelectedItemOffset.abs() % headerSize > headerSize / 2 ? 1 : 0;
+    shift += (additionalShift * fullSelectedItemOffset.toInt().sign);
 
     final item = items.removeAt(selectedItem);
     items.insert(selectedItem + shift, item);
 
+    scrollController.animateTo(
+      scrollPosition + scrollOffset + (260 - headerSize) * shift,
+      duration: duration,
+      curve: Curves.linear,
+    );
+
     setState(() {
+      a = false;
       collapsed = false;
       tapped = false;
       selectedItem = -1;
       selectedItemOffset = 0;
+      scrollOffset = 0;
     });
+  }
 
-    scrollController.animateTo(
-      scrollPosition + (260 - headerSize) * shift,
-      duration: duration,
-      curve: Curves.linear,
-    );
+  @override
+  void initState() {
+    final ticker = createTicker((elapsed) {
+      if (a) {
+        final topDistance = (selectedItem * headerSize + beforeOffset) -
+            scrollController.position.extentBefore;
+        final bottomDistance =
+            scrollController.position.extentInside - topDistance - headerSize;
+
+        if (selectedItemOffset + scrollOffset > bottomDistance &&
+            scrollController.position.extentAfter > 0) {
+          scrollController.jumpTo(scrollController.offset + 1);
+          setState(() {
+            scrollOffset += 1;
+          });
+        }
+
+        if (-selectedItemOffset + -scrollOffset > topDistance &&
+            scrollController.position.extentBefore > 0) {
+          scrollController.jumpTo(scrollController.offset - 1);
+          setState(() {
+            scrollOffset -= 1;
+          });
+        }
+      }
+    });
+    ticker.start();
+    super.initState();
   }
 
   @override
@@ -128,6 +164,9 @@ class _State extends State<GroupsList> with SingleTickerProviderStateMixin {
                     .fold<double>(0, (a, b) => a + b.height),
             onEnd: () {
               collapsed = true;
+              if (tapped) {
+                a = true;
+              }
             },
             child: Stack(
               children: [
@@ -166,7 +205,9 @@ class _State extends State<GroupsList> with SingleTickerProviderStateMixin {
                     child: Transform.translate(
                       offset: Offset(
                         0,
-                        selectedItem == selectedItem ? selectedItemOffset : 0,
+                        selectedItem == selectedItem
+                            ? selectedItemOffset + scrollOffset
+                            : 0,
                       ),
                       child: AnimatedSlide(
                         duration: duration,
